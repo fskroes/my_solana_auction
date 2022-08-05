@@ -2,7 +2,7 @@
 seeds = false
 skip-lint = false
 [programs.localnet]
-my_auction = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+my_auction = "Bbnt2AVTcEgGwhAShxjwSFT6dUaSgM8kmKhtp3kvvnAD"
 
 [registry]
 url = "https://api.apr.dev"
