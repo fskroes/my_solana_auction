@@ -1,10 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{TokenAccount, Mint, InitializeMint, initialize_mint};
+use std::ops::Add;
 
 declare_id!("Bbnt2AVTcEgGwhAShxjwSFT6dUaSgM8kmKhtp3kvvnAD");
-
-// mod errors;
-// use crate::errors::AuctionError;
 
 
 #[program]
@@ -13,14 +11,28 @@ pub mod my_auction {
 
     pub fn initialize(ctx: Context<Initialize>, auction_duration: u64, initial_price: u64) -> Result<()> {
         
-        initialize_mint(
+        let result = initialize_mint(
             ctx.accounts.init_context_mint(), 
             0, 
             ctx.accounts.mint_authority.key, 
             None
         );
+
+        match result {
+            Ok(_) => msg!("Mint is initialized. PDA is created"),
+            Err(error_message) => msg!("Something went wrong with initialising mint {:#?}", error_message.log()),
+        }
         
         let auction = &mut ctx.accounts.escrow_account;
+
+        auction.exhibitor_pubkey = ctx.accounts.exhibitor.key();
+        auction.exhibitor_ft_receiving_pubkey = ctx.accounts.exhibitor_ft_receiving_account.key();
+        auction.exhibiting_nft_temp_pubkey = ctx.accounts.exhibitor_nft_temp_account.key();
+        auction.highest_bidder_pubkey = ctx.accounts.exhibitor.key();
+        auction.highest_bidder_ft_temp_pubkey = ctx.accounts.exhibitor_ft_receiving_account.key();
+        auction.highest_bidder_ft_returning_pubkey = ctx.accounts.exhibitor_ft_receiving_account.key();
+        auction.price = initial_price;
+        auction.end_at = ctx.accounts.clock.unix_timestamp.add(auction_duration as i64);
 
         auction.bump = *ctx.bumps.get("mint_authority").unwrap();
         auction.mint = ctx.accounts.mint.key();
@@ -28,6 +40,7 @@ pub mod my_auction {
 
         Ok(())
     }
+
 }
 
 #[derive(Accounts)]
