@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{TokenAccount, Mint, InitializeMint, initialize_mint};
+use anchor_spl::token::{TokenAccount, Mint, InitializeMint, initialize_mint, Burn, burn, Token, MintTo, mint_to};
+use anchor_lang::solana_program::{program::invoke, system_program, system_instruction, native_token::sol_to_lamports};
 use std::ops::Add;
 
 declare_id!("Bbnt2AVTcEgGwhAShxjwSFT6dUaSgM8kmKhtp3kvvnAD");
@@ -41,6 +42,45 @@ pub mod my_auction {
         Ok(())
     }
 
+    pub fn bid(ctx: Context<Bid>, price: u64) -> Result<()> {
+
+        invoke(
+            &system_instruction::transfer(
+                ctx.accounts.bidder.key, 
+                ctx.accounts.treasury.key, 
+                sol_to_lamports(price as f64)
+            ),
+            &[
+                ctx.accounts.bidder.to_account_info().clone(),
+                ctx.accounts.treasury.clone(),
+            ],
+        )?;
+
+        let auction = &mut ctx.accounts.escrow_account;
+        auction.price = price;
+
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_accounts = MintTo {
+            mint: ctx.accounts.mint.to_account_info().clone(),
+            to: ctx.accounts.bidder_token_account.to_account_info(),
+            authority: ctx.accounts.mint_authority.to_account_info(),
+        };
+
+        let seeds = &[
+            ctx.accounts.mint.to_account_info().key.as_ref(),
+            &[ctx.accounts.escrow_account.bump],
+        ];
+        let signer = &[&seeds[..]];
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        mint_to(cpi_ctx, price)?;
+
+        // burn(ctx.accounts.init_burn_context(), price)?;
+
+        
+
+
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -97,6 +137,50 @@ impl<'info> Initialize<'info> {
         let cpi_accounts = InitializeMint {
             mint: self.mint.to_account_info(),
             rent: self.rent.to_account_info(),
+        };
+        CpiContext::new(cpi_program, cpi_accounts)
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(price: u64)]
+pub struct Bid<'info> {
+    /// CHECK:
+    #[account(mut, signer)]
+    pub bidder: AccountInfo<'info>,
+
+    // #[account(mut)]
+    // pub bidder_ft_temp_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub bidder_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut, has_one = mint, has_one = treasury)]
+    pub escrow_account: Account<'info, Auction>,
+
+    /// CHECK:
+    #[account(seeds = [mint.key().as_ref()], bump = escrow_account.bump)]
+    pub mint_authority: AccountInfo<'info>,
+    
+    /// CHECK:
+    #[account(mut)]
+    pub treasury: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub mint: Account<'info, Mint>,
+    /// CHECK:
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub clock: Sysvar<'info, Clock>,
+
+}
+impl<'info> Bid<'info> {
+    pub fn init_burn_context(&self) -> CpiContext<'_, '_, '_, 'info, Burn<'info>> {
+        let cpi_program = self.token_program.to_account_info();
+        let cpi_accounts = Burn {
+            mint: self.mint.to_account_info(),
+            authority: self.bidder.to_account_info(),
+            from: self.bidder_token_account.to_account_info(),
         };
         CpiContext::new(cpi_program, cpi_accounts)
     }

@@ -3,6 +3,7 @@ import { Program } from "@project-serum/anchor";
 import { MyAuction } from "../target/types/my_auction";
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, RpcResponseAndContext, SignatureResult, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction, TransactionInstruction, TransactionSignature } from "@solana/web3.js";
 import { AccountLayout, AuthorityType, createAccount, createInitializeAccountInstruction, createMint, mintTo, setAuthority, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { assert } from "chai";
 
 describe("my_auction", () => {
   const provider = anchor.AnchorProvider.env();
@@ -21,13 +22,19 @@ describe("my_auction", () => {
   const exhibitorNftTempAccount = anchor.web3.Keypair.generate();
   
   let nftMintPubkey: PublicKey
-  let ftMintPubkey: PublicKey
+  let ftMintPubkey: PublicKey;
   let exhibitorNftTokenAccountPubkey: PublicKey
   let exhibitorFtTokenAccountPubkey: PublicKey
 
+
+  const bidder1Account = anchor.web3.Keypair.generate();
+  let bidder1FtTokenAccountPubkey: PublicKey;
+
   it("setup", async () => {
     const txExhibitorAirdrop = await provider.connection.requestAirdrop(exhibitorAccount.publicKey, LAMPORTS_PER_SOL * 2);
+    const txBidder1Account = await provider.connection.requestAirdrop(bidder1Account.publicKey, LAMPORTS_PER_SOL * 2);
     await checkTransactionIsOK(provider, txExhibitorAirdrop);
+    await checkTransactionIsOK(provider, txBidder1Account);
 
 
     nftMintPubkey = await createMint(provider.connection, exhibitorAccount, exhibitorAccount.publicKey, null, 0, undefined, undefined, TOKEN_PROGRAM_ID);
@@ -42,7 +49,8 @@ describe("my_auction", () => {
 
     exhibitorFtTokenAccountPubkey = await createAccount(provider.connection, exhibitorAccount, ftMintPubkey, exhibitorAccount.publicKey, undefined, undefined, TOKEN_PROGRAM_ID);
     await mintTo(provider.connection, exhibitorAccount, ftMintPubkey, exhibitorFtTokenAccountPubkey, exhibitorAccount, 0, [], undefined, TOKEN_PROGRAM_ID);
-
+    // bidder1FtTokenAccountPubkey = await createAccount(provider.connection, bidder1Account, mint.publicKey, bidder1Account.publicKey, undefined, undefined, TOKEN_PROGRAM_ID);
+    // await mintTo(provider.connection, bidder1Account, ftMintPubkey, bidder1FtTokenAccountPubkey, bidder1Account, 500, [], undefined, TOKEN_PROGRAM_ID);
     
     await getCurrentStateOfAuction();
   });
@@ -83,6 +91,42 @@ describe("my_auction", () => {
       })
       .signers([exhibitorAccount, mint, auction, exhibitorNftTempAccount])
       .rpc();
+    
+  });
+
+
+  
+  it("First bid!", async () => {
+    bidder1FtTokenAccountPubkey = mint.publicKey;
+    let bidder1TokenAccount: PublicKey = await createAccount(
+      provider.connection, 
+      bidder1Account, 
+      bidder1FtTokenAccountPubkey, 
+      bidder1Account.publicKey,
+    );
+
+    // bidder1FtTokenAccountPubkey = await createAccount(provider.connection, bidder1Account, ftMintPubkey, bidder1Account.publicKey, undefined, undefined, TOKEN_PROGRAM_ID);
+    // // await mintTo(provider.connection, bidder1Account, ftMintPubkey, bidder1FtTokenAccountPubkey, bidder1Account, 500, [], undefined, TOKEN_PROGRAM_ID);
+
+    await program.methods
+      .bid(new anchor.BN(initialPrice.toNumber() + 0.5))
+      .accounts({
+        bidder: bidder1Account.publicKey,
+        bidderTokenAccount: bidder1TokenAccount,
+        escrowAccount: auction.publicKey,
+        mint: mint.publicKey,
+        mintAuthority: pda,
+        treasury: treasury.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+        systemProgram: SystemProgram.programId
+      })
+      .signers([bidder1Account])
+      .rpc();
+
+    let refreshAuction = await program.account.auction.fetch(auction.publicKey);
+    console.log(new anchor.BN(initialPrice.toNumber()));
+    // assert.equal(refreshAuction.price, new anchor.BN(initialPrice.toNumber() + 0.5));
     
   });
 
