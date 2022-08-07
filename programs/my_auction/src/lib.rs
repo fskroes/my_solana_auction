@@ -46,8 +46,8 @@ pub mod my_auction {
 
         invoke(
             &system_instruction::transfer(
-                ctx.accounts.bidder.key, 
-                ctx.accounts.treasury.key, 
+                &ctx.accounts.bidder.key(), 
+                &ctx.accounts.treasury.key(), 
                 sol_to_lamports(price as f64)
             ),
             &[
@@ -55,9 +55,6 @@ pub mod my_auction {
                 ctx.accounts.treasury.clone(),
             ],
         )?;
-
-        let auction = &mut ctx.accounts.escrow_account;
-        auction.price = price;
 
         let cpi_program = ctx.accounts.token_program.to_account_info();
         let cpi_accounts = MintTo {
@@ -74,9 +71,38 @@ pub mod my_auction {
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
         mint_to(cpi_ctx, price)?;
 
-        // burn(ctx.accounts.init_burn_context(), price)?;
+        let auction = &mut ctx.accounts.escrow_account;
+        auction.price = price;
+        auction.highest_bidder_pubkey = ctx.accounts.bidder.key();
+        auction.highest_bidder_ft_returning_pubkey = ctx.accounts.bidder_token_account.key();
 
+
+        Ok(())
+    }
+
+    pub fn refund(ctx: Context<Refund>) -> Result<()> {
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_accounts = MintTo {
+            mint: ctx.accounts.mint.to_account_info().clone(),
+            to: ctx.accounts.bidder_token_account.to_account_info(),
+            authority: ctx.accounts.mint_authority.to_account_info(),
+        };
+
+        let seeds = &[
+            ctx.accounts.mint.to_account_info().key.as_ref(),
+            &[ctx.accounts.escrow_account.bump],
+        ];
+        let signer = &[&seeds[..]];
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
         
+        // TODO there is a flaw in this design. Currently sending current amount of what is in the account.
+        mint_to(cpi_ctx, ctx.accounts.bidder_token_account.amount)?;
+
+        Ok(())
+    }
+
+    pub fn end_auction(ctx: Context<EndAuction>) -> Result<()> {
+
 
 
         Ok(())
@@ -174,16 +200,77 @@ pub struct Bid<'info> {
     pub clock: Sysvar<'info, Clock>,
 
 }
-impl<'info> Bid<'info> {
-    pub fn init_burn_context(&self) -> CpiContext<'_, '_, '_, 'info, Burn<'info>> {
-        let cpi_program = self.token_program.to_account_info();
-        let cpi_accounts = Burn {
-            mint: self.mint.to_account_info(),
-            authority: self.bidder.to_account_info(),
-            from: self.bidder_token_account.to_account_info(),
-        };
-        CpiContext::new(cpi_program, cpi_accounts)
-    }
+
+#[derive(Accounts)]
+pub struct Refund<'info> {
+    /// CHECK:
+    #[account(mut, signer)]
+    pub bidder: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub bidder_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut, has_one = mint, has_one = treasury)]
+    pub escrow_account: Account<'info, Auction>,
+
+    /// CHECK:
+    #[account(seeds = [mint.key().as_ref()], bump = escrow_account.bump)]
+    pub mint_authority: AccountInfo<'info>,
+    
+    /// CHECK:
+    #[account(mut)]
+    pub treasury: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub mint: Account<'info, Mint>,
+    /// CHECK:
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub clock: Sysvar<'info, Clock>,
+
+}
+
+#[derive(Accounts)]
+pub struct EndAuction<'info> {
+    
+    /// CHECK:
+    #[account(mut, signer)]
+    pub winning_bidder: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub highest_bidder_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub highest_bidder_nft_receiving_account: Account<'info, TokenAccount>,
+
+    /// CHECK:
+    #[account(mut, signer)]
+    pub exhibitor: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub exhibitor_nft_token_account: Account<'info, TokenAccount>,
+    pub exhibitor_nft_temp_account: Account<'info, TokenAccount>,
+    pub exhibitor_token_receiving_account:Account<'info, TokenAccount>,
+
+    #[account(mut, has_one = mint, has_one = treasury)]
+    pub escrow_account: Account<'info, Auction>,
+
+    /// CHECK:
+    #[account(seeds = [mint.key().as_ref()], bump = escrow_account.bump)]
+    pub mint_authority: AccountInfo<'info>,
+    
+    /// CHECK:
+    #[account(mut)]
+    pub treasury: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub mint: Account<'info, Mint>,
+    
+    /// CHECK:
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub clock: Sysvar<'info, Clock>,
+
 }
 
 #[account]

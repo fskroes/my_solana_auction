@@ -31,8 +31,8 @@ describe("my_auction", () => {
   let bidder1FtTokenAccountPubkey: PublicKey;
 
   it("setup", async () => {
-    const txExhibitorAirdrop = await provider.connection.requestAirdrop(exhibitorAccount.publicKey, LAMPORTS_PER_SOL * 2);
-    const txBidder1Account = await provider.connection.requestAirdrop(bidder1Account.publicKey, LAMPORTS_PER_SOL * 2);
+    const txExhibitorAirdrop = await provider.connection.requestAirdrop(exhibitorAccount.publicKey, LAMPORTS_PER_SOL * 3);
+    const txBidder1Account = await provider.connection.requestAirdrop(bidder1Account.publicKey, LAMPORTS_PER_SOL * 3);
     await checkTransactionIsOK(provider, txExhibitorAirdrop);
     await checkTransactionIsOK(provider, txBidder1Account);
 
@@ -94,22 +94,22 @@ describe("my_auction", () => {
     
   });
 
-
-  
+  bidder1FtTokenAccountPubkey = mint.publicKey;
+  let bidder1TokenAccount: PublicKey;
   it("First bid!", async () => {
-    bidder1FtTokenAccountPubkey = mint.publicKey;
-    let bidder1TokenAccount: PublicKey = await createAccount(
+    
+    bidder1TokenAccount = await createAccount(
       provider.connection, 
       bidder1Account, 
       bidder1FtTokenAccountPubkey, 
       bidder1Account.publicKey,
     );
 
-    // bidder1FtTokenAccountPubkey = await createAccount(provider.connection, bidder1Account, ftMintPubkey, bidder1Account.publicKey, undefined, undefined, TOKEN_PROGRAM_ID);
-    // // await mintTo(provider.connection, bidder1Account, ftMintPubkey, bidder1FtTokenAccountPubkey, bidder1Account, 500, [], undefined, TOKEN_PROGRAM_ID);
+    let refreshAuction = await program.account.auction.fetch(auction.publicKey);
+    assert.equal(refreshAuction.price.toNumber(), new anchor.BN(initialPrice.toNumber()).toNumber());
 
-    await program.methods
-      .bid(new anchor.BN(initialPrice.toNumber() + 0.5))
+    let signature = await program.methods
+      .bid(new anchor.BN(initialPrice.toNumber() + 1))
       .accounts({
         bidder: bidder1Account.publicKey,
         bidderTokenAccount: bidder1TokenAccount,
@@ -124,11 +124,37 @@ describe("my_auction", () => {
       .signers([bidder1Account])
       .rpc();
 
-    let refreshAuction = await program.account.auction.fetch(auction.publicKey);
-    console.log(new anchor.BN(initialPrice.toNumber()));
-    // assert.equal(refreshAuction.price, new anchor.BN(initialPrice.toNumber() + 0.5));
-    
+    await checkTransactionIsOK(provider, signature);
+
+    refreshAuction = await program.account.auction.fetch(auction.publicKey);
+    assert.equal(refreshAuction.price.toNumber(), new anchor.BN(initialPrice.toNumber() + 1).toNumber());
   });
+
+  it("Refund", async () => {
+
+    let refreshAuction = await program.account.auction.fetch(auction.publicKey);
+    assert.equal(refreshAuction.price.toNumber(), new anchor.BN(initialPrice.toNumber() + 1).toNumber());
+
+    await program.methods
+      .refund()
+      .accounts({
+        bidder: bidder1Account.publicKey,
+        bidderTokenAccount: bidder1TokenAccount,
+        escrowAccount: auction.publicKey,
+        mint: mint.publicKey,
+        mintAuthority: pda,
+        treasury: treasury.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+        systemProgram: SystemProgram.programId
+      })
+      .signers([bidder1Account])
+      .rpc();
+
+      refreshAuction = await program.account.auction.fetch(auction.publicKey);
+      // assert.equal(refreshAuction.price.toNumber(), new anchor.BN(initialPrice.toNumber() - 2).toNumber());
+  });
+
 
   const getCurrentStateOfAuction = async function(): Promise<void> {
     const data = {
