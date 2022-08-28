@@ -5,7 +5,8 @@ skip-lint = false
 my_auction = "Bbnt2AVTcEgGwhAShxjwSFT6dUaSgM8kmKhtp3kvvnAD"
 
 [registry]
-url = "https://api.apr.dev"
+# url = "https://api.apr.dev"
+url = "https://anchor.projectserum.com"
 
 [provider]
 cluster = "localnet"

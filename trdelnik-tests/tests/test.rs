@@ -1,80 +1,133 @@
-use fehler::throws;
-use program_client;
-use trdelnik_client::{anyhow::Result, *};
-use anchor_spl::token::Token;
-use spl_associated_token_account;
+use std::borrow::BorrowMut;
 
-use my_auction;
+use fehler::throws;
+use my_auction::Auction;
+use program_client::my_auction_instruction::*;
+use trdelnik_client::{
+    anyhow::Result,
+    solana_sdk::{
+        native_token::{lamports_to_sol, sol_to_lamports},
+        system_program,
+    },
+    *,
+};
 
 #[throws]
 #[fixture]
 async fn init_fixture() -> Fixture {
     let mut fixture = Fixture::new();
-
-    client: client::new(system_keypair(0)),
-    
-    auction_duration: 10,
-    initial_price: 1,
-    mint: keypair(1),
-    client
-        .create_token_mint(&mint, mint.pubkey(), None, 0)
-        .await?;
-
-    exhibitor: keypair(2),
-    exhibitor_nft_token_account: keypair(3),
-    // constructs associated token account
-    let token_account = client
-        .create_associated_token_account(&exhibitor, mint.pubkey())
-        .await?;
-    exhibitor_nft_temp_account: keypair(4),
-    exhibitor_ft_receiving_account: keypair(5),
-    let associated_token_program = 
-        spl_associated_token_account::id();
-    // derives the associated token account address for the given wallet and mint
-  let associated_token_address = 
-    spl_associated_token_account::get_associated_token_address(&exhibitor.pubkey(), mint);
-
-    escrow_account: keypair(6),
-    mint_authority: keypair(7),
-    treasury: keypair(8),
-    program: program_keypair(1),
-    
-    
-    
     fixture.deploy().await?;
-    my_auction::Initialize(
-        fixture.client,
-        fixture.mint.pubkey(),
-        ficture.state.pubkey(),
-        fixture.client.payer().pubkey(),
-        System::id(),
-        Some(fixture.state.clone()),
 
-        token_program: Token::id()
+    fixture
+        .client
+        .airdrop(fixture.exhibitor.pubkey(), 5_000_000_000)
+        .await?;
+
+    fixture
+        .client
+        .airdrop(fixture.bidder1.pubkey(), 5_000_000_000)
+        .await?;
+
+    initialize(
+        &fixture.client,
+        10,
+        1,
+        fixture.exhibitor.pubkey(),
+        fixture.auction_account.pubkey(),
+        fixture.treasury.pubkey(),
+        system_program::id(),
+        [
+            fixture.exhibitor.clone(),
+            fixture.auction_account.clone(),
+            fixture.treasury.clone(),
+        ],
     ).await?;
+
     fixture
 }
 
 #[trdelnik_test]
-async fn test_happy_path(#[future] init_fixture: Result<Fixture>) {
-    // @todo: add your happy path test scenario and the other test cases
-    let default_fixture = Fixture::new();
-    let fixture = init_fixture.await?;
-    assert_eq!(fixture.program, default_fixture.program);
+async fn test_exhibition_account_is_used_to_init_exhibition_sol_is_deducted(#[future] init_fixture: Result<Fixture>) {
+    let mut fixture = init_fixture.await?;
+    fixture.print_state().await?;
+
+    let balance_exhibitor = lamports_to_sol(
+        fixture
+            .client
+            .get_balance(fixture.exhibitor.pubkey())
+            .await?
+    );
+    
+    println!(
+        "Exhibitor: {:?}", balance_exhibitor
+    );
+    assert!(balance_exhibitor < sol_to_lamports(5.0) as f64);
 }
 
-// @todo: design and implement all the logic you need for your fixture(s)
+#[trdelnik_test]
+async fn test_auction_account_is_initialized_owner_same_as_program_id(#[future] init_fixture: Result<Fixture>) {
+    let mut fixture = init_fixture.await?;
+    fixture.print_state().await?;
+
+    let auction_account_state = fixture
+        .client
+        .get_account(fixture.auction_account.pubkey())
+        .await?
+        .unwrap();
+    
+    println!(
+        "Treasury account {:?}", auction_account_state
+    );
+
+    assert_eq!(program_keypair(0).pubkey(), auction_account_state.owner);
+}
+
+#[trdelnik_test]
+async fn test_treasury_account_is_initialized_owner_same_as_program_id(#[future] init_fixture: Result<Fixture>) {
+    let mut fixture = init_fixture.await?;
+    fixture.print_state().await?;
+
+    let treasury_account_state = fixture
+        .client
+        .get_account(fixture.treasury.pubkey())
+        .await?
+        .unwrap();
+    
+    println!(
+        "Treasury account {:?}", treasury_account_state
+    );
+
+    assert_eq!(program_keypair(0).pubkey(), treasury_account_state.owner);
+}
+
+
 struct Fixture {
     client: Client,
-    program: Keypair,
-    state: Keypair,
+    auction_account: Keypair,
+    treasury: Keypair,
+    exhibitor: Keypair,
+    bidder1: Keypair,
+    bid1: Pubkey
 }
 impl Fixture {
     fn new() -> Self {
+
+        let auction_program = program_keypair(0);
+        let auction_account = keypair(42);
+        let bidder1 = keypair(21);
+
+        let (bid1, _) = Pubkey::find_program_address(
+            &[auction_account.pubkey().as_ref(), bidder1.pubkey().as_ref()],
+            &auction_program.pubkey(),
+        );
+
         Fixture {
             client: Client::new(system_keypair(0)),
-            program: program_keypair(1),
-            state: keypair(42),
+            auction_account: keypair(42),
+            treasury: keypair(99),
+            exhibitor: keypair(32),
+            bidder1,
+            bid1,
         }
     }
 
@@ -83,5 +136,19 @@ impl Fixture {
         self.client
             .airdrop(self.client.payer().pubkey(), 5_000_000_000)
             .await?;
+        self.client
+            .deploy_by_name(&program_keypair(0), "my_auction")
+            .await?;
+    }
+
+    #[throws]
+    async fn print_state(&mut self) {
+        println!("\n-------------STATE---------------");
+        println!(
+            "initializer balance: {:?}\ntreasury balance: {:?}",
+            lamports_to_sol(self.client.get_balance(self.exhibitor.pubkey()).await?),
+            lamports_to_sol(self.client.get_balance(self.treasury.pubkey()).await?),
+        );
+        println!("---------------------------------\n");
     }
 }

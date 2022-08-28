@@ -3503,12 +3503,10 @@ dependencies = [
 name = "trdelnik-tests"
 version = "0.1.0"
 dependencies = [
- "anchor-spl",
  "fehler",
  "my_auction",
  "program_client",
  "rstest",
- "spl-associated-token-account",
  "trdelnik-client",
 ]
 
