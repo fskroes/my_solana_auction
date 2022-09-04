@@ -57,4 +57,50 @@ pub mod my_auction_instruction {
             .to_account_metas(None),
         }
     }
+    pub async fn bid(
+        client: &Client,
+        i_price: u64,
+        a_bid: anchor_lang::solana_program::pubkey::Pubkey,
+        a_bidder: anchor_lang::solana_program::pubkey::Pubkey,
+        a_auction_account: anchor_lang::solana_program::pubkey::Pubkey,
+        a_treasury: anchor_lang::solana_program::pubkey::Pubkey,
+        a_system_program: anchor_lang::solana_program::pubkey::Pubkey,
+        signers: impl IntoIterator<Item = Keypair> + Send + 'static,
+    ) -> Result<EncodedConfirmedTransaction, ClientError> {
+        Ok(client
+            .send_instruction(
+                PROGRAM_ID,
+                my_auction::instruction::Bid { price: i_price },
+                my_auction::accounts::Bid {
+                    bid: a_bid,
+                    bidder: a_bidder,
+                    auction_account: a_auction_account,
+                    treasury: a_treasury,
+                    system_program: a_system_program,
+                },
+                signers,
+            )
+            .await?)
+    }
+    pub fn bid_ix(
+        i_price: u64,
+        a_bid: anchor_lang::solana_program::pubkey::Pubkey,
+        a_bidder: anchor_lang::solana_program::pubkey::Pubkey,
+        a_auction_account: anchor_lang::solana_program::pubkey::Pubkey,
+        a_treasury: anchor_lang::solana_program::pubkey::Pubkey,
+        a_system_program: anchor_lang::solana_program::pubkey::Pubkey,
+    ) -> Instruction {
+        Instruction {
+            program_id: PROGRAM_ID,
+            data: my_auction::instruction::Bid { price: i_price }.data(),
+            accounts: my_auction::accounts::Bid {
+                bid: a_bid,
+                bidder: a_bidder,
+                auction_account: a_auction_account,
+                treasury: a_treasury,
+                system_program: a_system_program,
+            }
+            .to_account_metas(None),
+        }
+    }
 }
